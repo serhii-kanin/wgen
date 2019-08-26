@@ -1,0 +1,58 @@
+//go:generate go run gitlab.com/fusemedia/wgen
+
+package {{.Package.Alias}}
+
+{{ range $_, $pack := .Packages }}
+import {{ $pack.Alias }} "{{$pack.Name}}"
+{{- end }}
+
+{{ range $index, $type := .Types }}
+{{if not $type.Package -}}
+    type {{ $type.Type }} struct{}
+{{ end }}
+{{- end }}
+
+type WorkflowStateData struct {
+    {{ range $_, $param := .Parameters -}}
+        {{- $type := $param.ParameterType -}}
+        {{ $param.Name }} {{if $type.Package }}{{ $type.Package.Alias }}.{{end}}{{ $param.ParameterType.Type }}
+    {{ end }}
+}
+
+type WorkflowState struct {
+    Error error
+    CurrentTask TaskName
+
+}
+
+
+{{ range $index, $taskDefinition := .TaskDefinitions -}}
+
+{{ if eq (type $taskDefinition.Task) "SimpleTask" -}}
+type {{$taskDefinition.Name}} interface {
+    Execute(
+        {{- range $argI, $arg := $taskDefinition.Task.Arguments -}}
+
+            {{ if ne (inc $argI) (len $taskDefinition.Task.Arguments) -}}
+                {{- firstLetterToLower $arg.Name }} {{ $arg.ParameterType.Type }},
+            {{ else }}
+                {{- firstLetterToLower $arg.Name }} {{ $arg.ParameterType.Type }}
+            {{- end -}}
+        {{end -}}
+) ({{- range $_, $param := $taskDefinition.Task.Returns -}}
+    {{- $type := $param.ParameterType -}}
+    *{{if $type.Package }}{{ $type.Package.Alias }}.{{end}}{{ $param.ParameterType.Type }},
+ {{- end -}} error)
+}
+
+{{ end }}
+{{ end }}
+
+type Workflow struct {
+    State WorkflowState
+    StateData WorkflowStateData
+    {{ range $index, $taskDefinition := .TaskDefinitions -}}
+    {{firstLetterToLower $taskDefinition.Name}} {{ $taskDefinition.Name }}
+    {{ end }}
+    stopped bool
+}

@@ -1,0 +1,86 @@
+//THIS FILE IS GENERATED AUTOMATICALLY
+//DO NOT EDIT!!!
+
+package {{.Package.Alias}}
+
+
+type TaskName string
+
+const (
+{{ range $index, $taskDefinition := .TaskDefinitions }}
+   {{$taskDefinition.Name}}ErrorTaskName TaskName = "{{$taskDefinition.Name}}Error"
+   {{$taskDefinition.Name}}TaskName TaskName = "{{$taskDefinition.Name}}"
+{{- end }}
+   DoneTaskName TaskName = "Done"
+)
+
+
+func (flow *Workflow) Execute() error {
+    for !flow.IsStopped() {
+        err := flow.processCurrentTask()
+        if err != nil {
+            return err
+        }
+    }
+    return nil
+}
+
+func (flow *Workflow) processCurrentTask() error {
+    switch flow.State.CurrentTask {
+        {{ range $index, $taskDefinition := .TaskDefinitions -}}
+            case {{$taskDefinition.Name}}TaskName:
+            {{ if eq (type $taskDefinition.Task) "SimpleTask" -}}
+            {{template "methodReturns" $taskDefinition.Task.Returns}} := flow.{{firstLetterToLower $taskDefinition.Name}}.Execute(
+                {{- range $argI, $arg := $taskDefinition.Task.Arguments }}
+                    flow.StateData.{{- $arg.Name }}
+                {{- if ne (inc $argI) (len $taskDefinition.Task.Arguments) -}}
+                    ,
+                {{- end -}}
+            {{end -}}
+            )
+            if err != nil {
+                flow.State.Error = err
+                flow.State.CurrentTask = {{$taskDefinition.Name}}ErrorTaskName
+                flow.persist()
+                return nil
+            }
+
+            {{ range $_, $param := $taskDefinition.Task.Returns -}}
+                flow.StateData.{{$param.Name}} = *{{$param.Name}}
+            {{ end }}
+
+            {{if not $taskDefinition.NextTaskName -}}
+            flow.stopped = true
+            flow.State.CurrentTask = DoneTaskName
+            flow.persist()
+            {{- else -}}
+            flow.State.CurrentTask = {{$taskDefinition.NextTaskName}}TaskName
+            flow.persist()
+            {{- end -}}
+            {{- end}}
+        break
+
+        case {{$taskDefinition.Name}}ErrorTaskName:
+            //todo error strategy - now nothing
+            flow.stopped = true
+        return flow.State.Error
+        {{ end}}
+        case DoneTaskName:
+            flow.stopped = true
+        break
+    }
+
+    return nil
+}
+
+func (flow *Workflow) persist() {
+
+}
+func (flow *Workflow) IsStopped() bool {
+    return flow.stopped
+}
+
+
+{{define "methodReturns" -}}
+    {{- range $_, $param := . }}{{$param.Name}}, {{ end }}err
+{{- end}}
